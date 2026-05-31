@@ -169,20 +169,57 @@ stop_md()
 }
 
 record_system_speed_limit() {
-	system_speed_limit_max=`cat /proc/sys/dev/raid/speed_limit_max`
-	system_speed_limit_min=`cat /proc/sys/dev/raid/speed_limit_min`
+	local ip
+	local idx=0
+
+	NODES_SYSTEM_SPEED_LIMIT_MIN=()
+	NODES_SYSTEM_SPEED_LIMIT_MAX=()
+	for ip in $NODE1 $NODE2
+	do
+		NODES_SYSTEM_SPEED_LIMIT_MIN[$idx]=$(ssh $ip "cat /proc/sys/dev/raid/speed_limit_min")
+		NODES_SYSTEM_SPEED_LIMIT_MAX[$idx]=$(ssh $ip "cat /proc/sys/dev/raid/speed_limit_max")
+		idx=$[idx+1]
+	done
 }
 
 # To avoid sync action finishes before checking it, it needs to limit
 # the sync speed
 control_system_speed_limit() {
-	echo $test_speed_limit_min > /proc/sys/dev/raid/speed_limit_min
-	echo $test_speed_limit_max > /proc/sys/dev/raid/speed_limit_max
+	local ip
+
+	for ip in $NODE1 $NODE2
+	do
+		ssh $ip "echo $test_speed_limit_min > /proc/sys/dev/raid/speed_limit_min"
+		ssh $ip "echo $test_speed_limit_max > /proc/sys/dev/raid/speed_limit_max"
+	done
 }
 
 restore_system_speed_limit() {
-	echo $system_speed_limit_min > /proc/sys/dev/raid/speed_limit_max
-	echo $system_speed_limit_max > /proc/sys/dev/raid/speed_limit_max
+	local ip
+	local idx=0
+	local min
+	local max
+	local speed_limit_log
+
+	speed_limit_log="$logdir/${logfile:-$_basename.log}"
+	for ip in $NODE1 $NODE2
+	do
+		min=${NODES_SYSTEM_SPEED_LIMIT_MIN[$idx]}
+		max=${NODES_SYSTEM_SPEED_LIMIT_MAX[$idx]}
+		if [ -z "$min" ]
+		then
+			echo "$ip: speed_limit_min was not recorded, skip restoring." >> $speed_limit_log
+		else
+			ssh $ip "echo $min > /proc/sys/dev/raid/speed_limit_min"
+		fi
+		if [ -z "$max" ]
+		then
+			echo "$ip: speed_limit_max was not recorded, skip restoring." >> $speed_limit_log
+		else
+			ssh $ip "echo $max > /proc/sys/dev/raid/speed_limit_max"
+		fi
+		idx=$[idx+1]
+	done
 }
 
 record_selinux() {
@@ -238,6 +275,7 @@ do_setup()
 {
 	check_env
 	ulimit -c unlimited
+	record_system_speed_limit
 }
 
 do_clean()
